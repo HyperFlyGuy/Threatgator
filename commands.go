@@ -4,10 +4,12 @@ import (
 	"fmt"
 
 	"github.com/hyperflyguy/ThreatGator/internal/config"
+	"github.com/hyperflyguy/ThreatGator/internal/database"
 )
 
 type state struct {
-	c *config.Config
+	c  *config.Config
+	db *database.Queries
 }
 
 type command struct {
