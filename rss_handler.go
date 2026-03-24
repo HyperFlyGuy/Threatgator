@@ -30,6 +30,72 @@ type RSSItem struct {
 	PubDate     string `xml:"pubDate"`
 }
 
+func handlerUnfollowingFeed(s *state, cmd command, user database.User) error {
+	if len(cmd.args) > 1 {
+		fmt.Println("Too many arguements (rss_handler.go)")
+		os.Exit(1)
+		return nil
+	}
+	feed_url, err := s.db.GetFeed(context.Background(), cmd.args[0])
+	if err != nil {
+		fmt.Println("Failed to fetch feed information from Database (rss_handler.go):", err)
+		os.Exit(1)
+		return err
+	}
+	feed_d := database.DeleteFeedFollowParams{
+		UserID: user.ID,
+		FeedID: feed_url.ID,
+	}
+	s.db.DeleteFeedFollow(context.Background(), feed_d)
+	os.Exit(0)
+	return nil
+}
+
+func handlerFollowingFeed(s *state, cmd command, user database.User) error {
+	if len(cmd.args) > 1 {
+		fmt.Println("Too many arguements (rss_handler.go)")
+		os.Exit(1)
+		return nil
+	}
+	feeds, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
+	if err != nil {
+		fmt.Println("Failed to fetch user feeds from Database (rss_handler.go):", err)
+		os.Exit(1)
+		return err
+	}
+	for _, feed := range feeds {
+		fmt.Printf("FeedName: %s, Username: %s", feed.FeedName, feed.UserName)
+	}
+	os.Exit(0)
+	return nil
+}
+
+func handlerFollowFeed(s *state, cmd command, user database.User) error {
+	if len(cmd.args) != 1 {
+		fmt.Println("Too many arguements (rss_handler.go)")
+		os.Exit(1)
+		return nil
+	}
+	feed, err := s.db.DescribeFeed(context.Background(), cmd.args[0])
+
+	follow := database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    user.ID,
+		FeedID:    feed.ID,
+	}
+	row, err := s.db.CreateFeedFollow(context.Background(), follow)
+	if err != nil {
+		fmt.Println("Failed to follow feed (rss_handler.go):", err)
+		os.Exit(1)
+		return err
+	}
+	fmt.Println(row)
+	os.Exit(0)
+	return nil
+}
+
 func handlerListFeeds(s *state, cmd command) error {
 	if len(cmd.args) > 0 {
 		fmt.Println("Too many arguements (rss_handler.go)")
@@ -48,19 +114,12 @@ func handlerListFeeds(s *state, cmd command) error {
 	return nil
 }
 
-func handlerAddFeed(s *state, cmd command) error {
+func handlerAddFeed(s *state, cmd command, user database.User) error {
 	if len(cmd.args) != 2 {
 		fmt.Println("Not Enough Arguments (rss_handler.go)")
 		os.Exit(1)
 		return nil
 	}
-	user, err := s.db.GetUser(context.Background(), s.c.CurrentUsername)
-	if err != nil {
-		fmt.Println("Failed to fetch user UUID from Database (rss_handler.go):", err)
-		os.Exit(1)
-		return err
-	}
-
 	feed := database.CreateFeedParams{
 		ID:        uuid.New(),
 		CreatedAt: time.Now(),
@@ -71,6 +130,15 @@ func handlerAddFeed(s *state, cmd command) error {
 	}
 	s.db.CreateFeed(context.Background(), feed)
 	fmt.Println(feed)
+	// create a follow entry
+	follow := database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    user.ID,
+		FeedID:    feed.ID,
+	}
+	s.db.CreateFeedFollow(context.Background(), follow)
 	os.Exit(0)
 	return nil
 }
