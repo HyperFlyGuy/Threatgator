@@ -40,6 +40,7 @@ func main() {
 	cmd.register("follow", middlewareLoggedIn(handlerFollowFeed))
 	cmd.register("following", middlewareLoggedIn(handlerFollowingFeed))
 	cmd.register("unfollow", middlewareLoggedIn(handlerUnfollowingFeed))
+	cmd.register("browse", middlewareLoggedIn(handlerBrowse))
 	if len(args) < 2 {
 		fmt.Println("Invalid number of arguments (expected 2)")
 		os.Exit(1)
