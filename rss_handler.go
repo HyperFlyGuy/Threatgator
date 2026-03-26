@@ -56,7 +56,7 @@ func handlerBrowse(s *state, cmd command, user database.User) error {
 		fmt.Println(post.Title)
 		fmt.Println(post.PublishedAt)
 		fmt.Println(post.Description)
-		fmt.Println("-----------------------\n")
+		fmt.Println("-----------------------")
 	}
 	return nil
 }
