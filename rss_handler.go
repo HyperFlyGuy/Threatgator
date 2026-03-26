@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/xml"
 	"fmt"
 	"html"
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +30,74 @@ type RSSItem struct {
 	Link        string `xml:"link"`
 	Description string `xml:"description"`
 	PubDate     string `xml:"pubDate"`
+}
+
+func handlerBrowse(s *state, cmd command, user database.User) error {
+	limit := 2
+	if len(cmd.args) == 1 {
+		if specified_limit, err := strconv.Atoi(cmd.args[0]); err == nil {
+			limit = specified_limit
+		} else {
+			return fmt.Errorf("invalid limit: %w", err)
+		}
+	}
+	reader := database.GetPostsForUserParams{
+		UserID: user.ID,
+		Limit:  int32(limit),
+	}
+	posts, err := s.db.GetPostsForUser(context.Background(), reader)
+	if err != nil {
+		fmt.Println("Failed to fetch feed information from Database (rss_handler.go):", err)
+		os.Exit(1)
+		return err
+	}
+	for _, post := range posts {
+		fmt.Println("\n-----------------------")
+		fmt.Println(post.Title)
+		fmt.Println(post.PublishedAt)
+		fmt.Println(post.Description)
+		fmt.Println("-----------------------")
+	}
+	return nil
+}
+
+func scrapeFeeds(s *state) error {
+	n_feed, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		fmt.Println("Failed to fetch feed information from Database (rss_handler.go):", err)
+		os.Exit(1)
+		return err
+	}
+	s.db.MarkFeedFetched(context.Background(), n_feed.ID)
+	url := n_feed.Url //cmd.args[0]
+	res, err := fetchFeed(context.Background(), url)
+	if err != nil {
+		return err
+	}
+	for _, item := range res.Channel.Item {
+		publishedAt := sql.NullTime{}
+		if t, err := time.Parse(time.RFC1123Z, item.PubDate); err == nil {
+			publishedAt = sql.NullTime{
+				Time:  t,
+				Valid: true,
+			}
+			if publishedAt.Valid != true {
+				publishedAt.Time = time.Now()
+			}
+		}
+		post := database.CreatePostParams{
+			ID:          uuid.New(),
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+			Title:       item.Title,
+			Url:         item.Link,
+			Description: item.Description,
+			PublishedAt: publishedAt.Time,
+			FeedID:      n_feed.ID,
+		}
+		s.db.CreatePost(context.Background(), post)
+	}
+	return nil
 }
 
 func handlerUnfollowingFeed(s *state, cmd command, user database.User) error {
@@ -144,12 +214,23 @@ func handlerAddFeed(s *state, cmd command, user database.User) error {
 }
 
 func handlerAgg(s *state, cmd command) error {
-	url := "https://www.wagslane.dev/index.xml" //cmd.args[0]
-	res, err := fetchFeed(context.Background(), url)
+	if len(cmd.args) != 1 {
+		fmt.Println("Invalid number of arguments (rss_handler.go)")
+		os.Exit(1)
+		return nil
+	}
+	interval, err := time.ParseDuration(cmd.args[0])
 	if err != nil {
+		fmt.Println("Unable to parse the time interval(rss_handler.go): ", err)
+		os.Exit(1)
 		return err
 	}
-	fmt.Println(res)
+
+	ticker := time.NewTicker(interval)
+	fmt.Printf("Collecting feeds every %s\n", interval)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
 	return nil
 }
 
